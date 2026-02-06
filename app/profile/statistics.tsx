@@ -1,43 +1,70 @@
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { PRIMARY, BACKGROUND_DARK } from '@/constants/Colors';
+import { PRIMARY, BACKGROUND_DARK, SURFACE_DARK } from '@/constants/Colors';
 import { useUser } from '@/context/UserContext';
 import GlassPanel from '@/components/GlassPanel';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+import { useEffect, useState } from 'react';
+import client from '@/api/client';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function StatisticsScreen() {
     const router = useRouter();
     const { userData } = useUser();
+    const [history, setHistory] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    // Determine weekly activity from completedWorkouts
-    // 0 = Sunday, 1 = Monday, ... 6 = Saturday
-    // We want Mon(1) -> Sun(0) mapping for array index 0-6
-    const weeklyWorkouts = [0, 0, 0, 0, 0, 0, 0];
-    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    useEffect(() => {
+        const fetchHistory = async () => {
+            try {
+                const res = await client.get('/user/stats/history?days=7');
+                // If backend returns empty, we might want to fill with zeros or just show empty state
+                setHistory(res.data || []);
+            } catch (error) {
+                console.error('Failed to fetch history:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchHistory();
+    }, []);
 
-    const now = new Date();
-    // Start of the week (Monday)
-    const startOfWeek = new Date(now);
-    const day = startOfWeek.getDay() || 7; // Get current day number, converting Sun(0) to 7
-    if (day !== 1) startOfWeek.setHours(-24 * (day - 1)); // Set to Monday
+    // Process data for charts
+    const chartData = {
+        labels: history.length > 0 ? history.map(d => new Date(d.date).toLocaleDateString(undefined, { weekday: 'short' })) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [
+            {
+                data: history.length > 0 ? history.map(d => d.caloriesBurned) : [0, 0, 0, 0, 0, 0, 0],
+                color: (opacity = 1) => `rgba(13, 242, 108, ${opacity})`, // PRIMARY color
+                strokeWidth: 2
+            }
+        ]
+    };
 
-    userData?.completedWorkouts?.forEach(workout => {
-        const wDate = new Date(workout.date);
-        // Check if workout is within this week
-        if (wDate >= startOfWeek) {
-            let dayIndex = wDate.getDay(); // 0 (Sun) - 6 (Sat)
-            // Convert to 0 (Mon) - 6 (Sun)
-            dayIndex = dayIndex === 0 ? 6 : dayIndex - 1;
-            weeklyWorkouts[dayIndex] += Math.round(workout.duration / 60); // Add minutes
-        }
-    });
-
-    const maxMins = Math.max(...weeklyWorkouts, 60); // Default max 60 to avoid div/0
-
-    // Calculate Total Stats (All Time)
+    // Calculate Total Stats (All Time) based on UserData (which is source of truth for totals)
+    // OR we could aggregate from history if we want a specific range. 
+    // Let's stick to existing userData for "All Time" totals
     const totalCalories = userData.completedWorkouts.reduce((sum, w) => sum + w.calories, 0);
     const totalMinutes = userData.completedWorkouts.reduce((sum, w) => sum + Math.round(w.duration / 60), 0);
     const totalWorkouts = userData.completedWorkouts.length;
+
+    const chartConfig = {
+        backgroundGradientFrom: SURFACE_DARK,
+        backgroundGradientTo: SURFACE_DARK,
+        decimalPlaces: 0,
+        color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+        labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+        style: {
+            borderRadius: 16
+        },
+        propsForDots: {
+            r: "4",
+            strokeWidth: "2",
+            stroke: PRIMARY
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -49,21 +76,26 @@ export default function StatisticsScreen() {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}>
+            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
                 <GlassPanel style={styles.chartCard}>
-                    <Text style={styles.cardTitle}>This Week's Activity (min)</Text>
-                    <View style={styles.chart}>
-                        {weeklyWorkouts.map((mins, index) => (
-                            <View key={index} style={styles.barContainer}>
-                                <View style={[
-                                    styles.bar,
-                                    { height: mins === 0 ? 4 : (mins / maxMins) * 150 },
-                                    mins > 0 && { backgroundColor: PRIMARY }
-                                ]} />
-                                <Text style={styles.dayLabel}>{days[index]}</Text>
-                            </View>
-                        ))}
-                    </View>
+                    <Text style={styles.cardTitle}>Calories Burned (Last 7 Days)</Text>
+                    {loading ? (
+                        <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+                            <ActivityIndicator color={PRIMARY} />
+                        </View>
+                    ) : (
+                        <LineChart
+                            data={chartData}
+                            width={SCREEN_WIDTH - 48} // Window width - padding
+                            height={220}
+                            chartConfig={chartConfig}
+                            bezier
+                            style={{
+                                marginVertical: 8,
+                                borderRadius: 16
+                            }}
+                        />
+                    )}
                 </GlassPanel>
 
                 <View style={styles.statsGrid}>
@@ -94,13 +126,13 @@ export default function StatisticsScreen() {
 
                 <Text style={styles.sectionTitle}>History</Text>
                 {userData.completedWorkouts.length > 0 ? (
-                    userData.completedWorkouts.map((workout, index) => (
+                    userData.completedWorkouts.slice().reverse().map((workout, index) => ( // Reverse to show latest first
                         <View key={index} style={styles.historyItem}>
                             <View style={styles.historyIcon}>
                                 <Ionicons name="checkmark" size={20} color="#000" />
                             </View>
                             <View style={styles.historyInfo}>
-                                <Text style={styles.historyTitle}>Workout #{workout.id}</Text>
+                                <Text style={styles.historyTitle}>Workout #{workout.id.substring(0, 8)}</Text>
                                 <Text style={styles.historyDate}>{new Date(workout.date).toLocaleDateString()}</Text>
                             </View>
                             <Text style={styles.historyValue}>{workout.calories} kcal</Text>
@@ -145,32 +177,18 @@ const styles = StyleSheet.create({
     },
     chartCard: {
         marginBottom: 24,
-        padding: 20,
+        padding: 0, // Padding handled by chart wrapper or internal padding if needed, ChartKit handles padding
+        paddingVertical: 10,
+        alignItems: 'center', // Center chart
+        overflow: 'hidden'
     },
     cardTitle: {
         fontSize: 16,
         fontWeight: '700',
         color: '#fff',
-        marginBottom: 24,
-    },
-    chart: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-end',
-        height: 180,
-    },
-    barContainer: {
-        alignItems: 'center',
-        gap: 8,
-    },
-    bar: {
-        width: 8,
-        borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-    },
-    dayLabel: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.5)',
+        marginBottom: 10,
+        paddingHorizontal: 20,
+        alignSelf: 'flex-start'
     },
     statsGrid: {
         flexDirection: 'row',

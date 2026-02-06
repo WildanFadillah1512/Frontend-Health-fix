@@ -9,7 +9,7 @@ import PhotoUpload from '@/components/PhotoUpload';
 
 export default function ProfileScreen() {
     const router = useRouter();
-    const { userData } = useUser();
+    const { userData, updateUserData } = useUser();
     const { signOut, user } = useAuth();
 
     // Calculate dynamic stats
@@ -60,7 +60,7 @@ export default function ProfileScreen() {
                         <View style={styles.avatarContainer}>
                             <PhotoUpload
                                 currentImage={userData.avatar}
-                                endpoint="/upload/progress-photo" // Using progress endpoint reused for now or add specific avatar one
+                                endpoint="/upload/profile" // Correct endpoint for profile photos
                                 onUploadComplete={(url) => {
                                     console.log('Avatar updated:', url);
                                     updateUserData({ avatar: url });

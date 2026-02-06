@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PRIMARY, BACKGROUND_DARK } from '@/constants/Colors';
 import { useState, useEffect } from 'react';
 import { useUser } from '@/context/UserContext';
+import PhotoUpload from '@/components/PhotoUpload';
 
 export default function LogMealScreen() {
     const router = useRouter();
@@ -17,6 +18,7 @@ export default function LogMealScreen() {
     const [carbs, setCarbs] = useState(params.carbs as string || '');
     const [fat, setFat] = useState(params.fat as string || '');
     const [type, setType] = useState('Breakfast');
+    const [image, setImage] = useState(params.image as string || '');
 
     const handleSave = () => {
         if (!name || !calories) return;
@@ -29,7 +31,7 @@ export default function LogMealScreen() {
             carbs: parseInt(carbs) || 0,
             fat: parseInt(fat) || 0,
             time: type,
-            image: params.image as string // optional
+            image: image // Use state
         });
 
         router.back();
@@ -69,6 +71,19 @@ export default function LogMealScreen() {
                     value={name}
                     onChangeText={setName}
                 />
+
+                <Text style={styles.label}>Photo (Optional)</Text>
+                <View style={{ alignItems: 'center', marginBottom: 24 }}>
+                    <PhotoUpload
+                        currentImage={image}
+                        endpoint="/upload/meal-image" // Corrected endpoint
+                        onUploadComplete={(url: string) => {
+                            console.log('Meal photo uploaded:', url);
+                            setImage(url);
+                        }}
+                        size={120}
+                    />
+                </View>
 
                 <Text style={styles.label}>Calories (kcal)</Text>
                 <TextInput
